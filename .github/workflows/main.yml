@@ -1,0 +1,94 @@
+name: Build Loren Align Post 2
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilar
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --target LorenAlignPost2_VST3 --parallel
+
+      - name: Reunir VST3
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Get-ChildItem -Path build -Recurse -Directory -Filter *.vst3 | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination dist -Recurse -Force
+          }
+
+      - name: Crear instalador de Windows
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $iss = @'
+          [Setup]
+          AppName=Loren Align Post 2
+          AppVersion=1.0.0
+          AppPublisher=La Pauta Studio
+          DefaultDirName={commoncf64}\VST3
+          DisableDirPage=yes
+          DisableProgramGroupPage=yes
+          OutputDir=installer_out
+          OutputBaseFilename=Loren-Align-Post-2-Instalador-Windows
+          Compression=lzma
+          ArchitecturesInstallIn64BitMode=x64
+          PrivilegesRequired=admin
+          [Files]
+          Source: "dist\Loren Align Post 2.vst3\*"; DestDir: "{commoncf64}\VST3\Loren Align Post 2.vst3"; Flags: recursesubdirs createallsubdirs ignoreversion
+          '@
+          Set-Content -Path installer.iss -Value $iss -Encoding UTF8
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Instalador-Windows
+          path: installer_out/*.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VST3-Windows
+          path: dist
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilar
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release --target LorenAlignPost2_VST3 --parallel
+
+      - name: Reunir y firmar VST3
+        run: |
+          mkdir -p dist
+          find build -name "*.vst3" -type d -prune -exec cp -R {} dist/ \;
+          codesign --force --deep -s - "dist/Loren Align Post 2.vst3"
+
+      - name: Crear instalador de Mac
+        run: |
+          mkdir -p pkgroot/Library/Audio/Plug-Ins/VST3
+          cp -R "dist/Loren Align Post 2.vst3" pkgroot/Library/Audio/Plug-Ins/VST3/
+          pkgbuild --root pkgroot \
+            --identifier com.lapauta.lorenalignpost2 \
+            --version 1.0.0 \
+            --install-location / \
+            Loren-Align-Post-2-Instalador-Mac.pkg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Instalador-Mac
+          path: Loren-Align-Post-2-Instalador-Mac.pkg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VST3-Mac
+          path: dist
