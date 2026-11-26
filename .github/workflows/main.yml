@@ -1,3 +1,4 @@
+
 name: Build Loren Align Post 2
 
 on:
@@ -64,24 +65,58 @@ jobs:
 
       - name: Compilar
         run: |
+          set -e
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release --target LorenAlignPost2_VST3 --parallel
 
-      - name: Reunir y firmar VST3
+      - name: Verificar y reunir VST3
         run: |
+          set -euo pipefail
+
           mkdir -p dist
-          find build -name "*.vst3" -type d -prune -exec cp -R {} dist/ \;
-          codesign --force --deep -s - "dist/Loren Align Post 2.vst3"
+
+          VST3_SOURCE=$(find build -type d -name "Loren Align Post 2.vst3" -print -quit)
+
+          if [ -z "$VST3_SOURCE" ]; then
+            echo "ERROR: No se encontró Loren Align Post 2.vst3"
+            find build -name "*.vst3" -print
+            exit 1
+          fi
+
+          if [ ! -f "$VST3_SOURCE/Contents/Info.plist" ]; then
+            echo "ERROR: El VST3 no contiene Contents/Info.plist"
+            exit 1
+          fi
+
+          plutil -lint "$VST3_SOURCE/Contents/Info.plist"
+
+          ditto "$VST3_SOURCE" "dist/Loren Align Post 2.vst3"
+
+          codesign --force --deep --sign - "dist/Loren Align Post 2.vst3"
+
+          codesign --verify --deep "dist/Loren Align Post 2.vst3"
 
       - name: Crear instalador de Mac
         run: |
-          mkdir -p pkgroot/Library/Audio/Plug-Ins/VST3
-          cp -R "dist/Loren Align Post 2.vst3" pkgroot/Library/Audio/Plug-Ins/VST3/
-          pkgbuild --root pkgroot \
+          set -euo pipefail
+
+          mkdir -p "pkgroot/Library/Audio/Plug-Ins/VST3"
+
+          ditto \
+            "dist/Loren Align Post 2.vst3" \
+            "pkgroot/Library/Audio/Plug-Ins/VST3/Loren Align Post 2.vst3"
+
+          chmod -R a+rX pkgroot
+
+          pkgbuild \
+            --root pkgroot \
             --identifier com.lapauta.lorenalignpost2 \
             --version 1.0.0 \
             --install-location / \
-            Loren-Align-Post-2-Instalador-Mac.pkg
+            --ownership recommended \
+            "Loren-Align-Post-2-Instalador-Mac.pkg"
+
+          pkgutil --payload-files "Loren-Align-Post-2-Instalador-Mac.pkg"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -92,3 +127,4 @@ jobs:
         with:
           name: VST3-Mac
           path: dist
+          
